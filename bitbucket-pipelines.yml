@@ -1,0 +1,56 @@
+# This is a sample build configuration for Java (Maven).
+# Check our guides at https://confluence.atlassian.com/x/zd-5Mw for more examples.
+# Only use spaces to indent your .yml configuration.
+# -----
+# You can specify a custom docker image from Docker Hub as your build environment.
+image: maven:3.6.1-jdk-14
+
+pipelines:
+  branches:
+    develop:
+      #- step:
+      #    name: Test
+      #    script:
+      #      - mvn test
+      - step:
+          name: Compile
+          script:
+            - mvn -Dmaven.test.skip -B install
+            - mvn -Dmaven.test.skip compile
+            - mvn -Dmaven.test.skip package
+          artifacts:
+            - 'target/*.jar'
+      #TODO -> kill prev process of JAVA for the given env
+      - step:
+          name: Autodeploy to test
+          deployment: test
+          image: atlassian/default-image
+          script:
+            - "ssh $STFP_USER@$SFTP_IP mkdir -p /var/www/$SPRING_ENV_NAME"
+            - "ssh $STFP_USER@$SFTP_IP rm -rf /var/www/$SPRING_ENV_NAME/*"
+            - pipe: atlassian/sftp-deploy:0.5.2
+              variables:
+                USER: $STFP_USER
+                SERVER: $SFTP_IP
+                REMOTE_PATH: "/var/www/$SPRING_ENV_NAME"
+                LOCAL_PATH: 'target/**'
+                DEBUG: 'true'
+            - "ssh $STFP_USER@$SFTP_IP kill -9 $(lsof -t -i:$SPRING_PORT -sTCP:LISTEN) || true"
+            - "ssh $STFP_USER@$SFTP_IP /opt/jdk-14/bin/java -jar -Dspring.profiles.active=$SPRING_ENV_NAME /var/www/$SPRING_ENV_NAME/$SPRING_JAR_NAME.jar && disown &"
+      - step:
+          name: Manual deploy to PROD
+          trigger: manual
+          deployment: prod
+          image: atlassian/default-image
+          script:
+            - "ssh $STFP_USER@$SFTP_IP mkdir -p /var/www/$SPRING_ENV_NAME"
+            - "ssh $STFP_USER@$SFTP_IP rm -rf /var/www/$SPRING_ENV_NAME/*"
+            - pipe: atlassian/sftp-deploy:0.5.2
+              variables:
+                USER: $STFP_USER
+                SERVER: $SFTP_IP
+                REMOTE_PATH: "/var/www/$SPRING_ENV_NAME"
+                LOCAL_PATH: 'target/**'
+                DEBUG: 'true'
+            - "ssh $STFP_USER@$SFTP_IP kill -9 $(lsof -t -i:$SPRING_PORT -sTCP:LISTEN) || true"
+            - "ssh $STFP_USER@$SFTP_IP /opt/jdk-14/bin/java -jar -Dspring.profiles.active=$SPRING_ENV_NAME /var/www/$SPRING_ENV_NAME/$SPRING_JAR_NAME.jar && disown &"
